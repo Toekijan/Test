@@ -1,72 +1,96 @@
 import type { RegelsOpLocatie, OmgevingsdocumentRegel } from "@/types/domain";
 
 /**
- * Client voor de open-data API's van het Digitaal Stelsel Omgevingswet (DSO),
- * ook bekend als "Regels op de kaart" (https://omgevingswet.overheid.nl/regels-op-de-kaart).
+ * Client voor de "Ruimtelijke Plannen API" van het Digitaal Stelsel Omgevingswet (DSO),
+ * de opvolger van ruimtelijkeplannen.nl. Dit is de databron achter de publieke viewer
+ * "Regels op de kaart" (https://omgevingswet.overheid.nl/regels-op-de-kaart).
  *
- * BELANGRIJK - lees dit voor gebruik:
- * De DSO-API's vereisen een gratis, self-service API-key die je aanvraagt via
- * https://developer.omgevingswet.overheid.nl/formulieren/api-key-aanvragen-0/
- * Zet die key in de omgevingsvariabele DSO_API_KEY.
+ * Endpoint en request/response-vorm zijn overgenomen uit de officiele OpenAPI-spec die
+ * PDOK publiceert op GitHub (PDOK/open-api-specs, ruimtelijke-plannen/alleplannen.yaml):
+ * host "data.informatiehuisruimte.nl", basePath "/api/ruimtelijke-plannen/v1". Die spec
+ * definieert geen securityScheme, dus deze API lijkt (in elk geval voor het opvragen van
+ * "leidende plannen" op een punt) zonder API-key te werken. Zet toch DSO_API_KEY in
+ * .env.local als je merkt dat de live gateway een key afdwingt (401/403) die niet in de
+ * spec staat - we sturen 'm dan automatisch mee als x-api-key header.
  *
- * De exacte endpoint-URL/response-vorm van de "omgevingsspecifieke informatie"
- * (geometrie-gebaseerde regelopvraging) staat in de OpenAPI-specificatie die je
- * pas kunt inzien nadat je een API-key hebt aangevraagd op het Ontwikkelaarsportaal
- * (developer.omgevingswet.overheid.nl/api-register). Dit sandbox-milieu had geen
- * netwerktoegang tot dat portaal om de spec te verifieren, dus de pad-constanten
- * hieronder zijn bewust configureerbaar via environment variables (DSO_BASE_URL /
- * DSO_REGELS_PATH) zodat je ze zonder code-wijziging kunt corrigeren op basis van
- * de echte spec. Bij een onverwacht antwoord faalt deze module expliciet in plaats
- * van stilzwijgend onjuiste data te verzinnen, en verwijzen we altijd door naar de
- * officiele viewer zodat je nooit zonder brondata zit.
+ * BELANGRIJKE KANTTEKENING: dit sandbox-milieu had geen netwerktoegang tot
+ * data.informatiehuisruimte.nl, dus deze integratie is opgebouwd uit de gepubliceerde
+ * spec maar niet live tegen echte responses getest - met name de exacte vorm van de
+ * "teksten"-resource (de daadwerkelijke regeltekst) stond niet in de ingeziene spec-file.
+ * Bij een onverwacht antwoord faalt deze module expliciet in plaats van data te verzinnen,
+ * en we tonen altijd een link naar de officiele viewer zodat je nooit zonder brondata zit.
  */
 
-const DSO_BASE_URL =
-  process.env.DSO_BASE_URL ?? "https://service.omgevingswet.overheid.nl/publiek/omgevingsdocumenten/api";
-const DSO_REGELS_PATH = process.env.DSO_REGELS_PATH ?? "/v6/omgevingsspecifiekeinformatie/_zoek";
+const RP_BASE_URL = process.env.DSO_BASE_URL ?? "https://data.informatiehuisruimte.nl/api/ruimtelijke-plannen/v1";
 
 function omgevingsloketUrl(lat: number, lon: number): string {
   return `https://omgevingswet.overheid.nl/regels-op-de-kaart/?lat=${lat.toFixed(6)}&lon=${lon.toFixed(6)}`;
 }
 
-interface DsoZoekResponse {
-  bevoegdGezag?: { naam?: string };
-  resultaten?: Array<{
-    omgevingsdocument?: { titel?: string; type?: string; identificatie?: string; bekendOnder?: string };
-    regelteksten?: Array<{ tekst?: string; identificatie?: string }>;
-    documentUrl?: string;
-  }>;
+function authHeaders(): Record<string, string> {
+  const apiKey = process.env.DSO_API_KEY;
+  return apiKey ? { "x-api-key": apiKey } : {};
+}
+
+interface RpPlan {
+  id: string;
+  naam?: string;
+  type?: string;
+  planstatusInfo?: { planstatus?: string; datum?: string };
+  _links?: { self?: { href?: string }; teksten?: { href?: string } };
+}
+
+interface RpZoekResponse {
+  _embedded?: { plannen?: RpPlan[] };
+}
+
+/** Best-effort parser: de exacte vorm van de teksten-resource is niet geverifieerd (zie moduledoc). */
+function extraheerTekst(item: unknown): string | null {
+  if (typeof item === "string") return item;
+  if (item && typeof item === "object") {
+    const obj = item as Record<string, unknown>;
+    for (const key of ["tekst", "xhtml", "inhoud", "content", "waarde"]) {
+      if (typeof obj[key] === "string") return obj[key] as string;
+    }
+  }
+  return null;
+}
+
+async function haalTekstenOp(href: string): Promise<string[]> {
+  try {
+    const res = await fetch(href, {
+      headers: { Accept: "application/hal+json, application/json", ...authHeaders() },
+      cache: "no-store",
+    });
+    if (!res.ok) return [];
+    const data = (await res.json()) as Record<string, unknown>;
+    const embedded = data._embedded as Record<string, unknown> | undefined;
+    const lijst = (Object.values(embedded ?? {})[0] as unknown[] | undefined) ?? [];
+    return lijst.map(extraheerTekst).filter((t): t is string => Boolean(t));
+  } catch {
+    return [];
+  }
 }
 
 export async function haalRegelsOp(lat: number, lon: number): Promise<RegelsOpLocatie> {
   const loketUrl = omgevingsloketUrl(lat, lon);
-  const apiKey = process.env.DSO_API_KEY;
-
-  if (!apiKey) {
-    return {
-      status: "geen_key",
-      melding:
-        "Geen DSO_API_KEY geconfigureerd. Vraag een gratis API-key aan via " +
-        "https://developer.omgevingswet.overheid.nl/formulieren/api-key-aanvragen-0/ en zet deze in .env.local. " +
-        "Je kunt de geldende regels voor dit punt in de tussentijd handmatig bekijken in de officiele viewer.",
-      bevoegdGezag: null,
-      regels: [],
-      omgevingsloketUrl: loketUrl,
-    };
-  }
 
   const body = {
-    geometrie: { type: "Point", coordinates: [lon, lat] },
+    _geo: {
+      contains: { type: "Point", coordinates: [lon, lat] },
+    },
   };
 
   let res: Response;
   try {
-    res = await fetch(`${DSO_BASE_URL}${DSO_REGELS_PATH}`, {
+    res = await fetch(`${RP_BASE_URL}/leidende-plannen/_zoek`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Accept: "application/json",
-        "x-api-key": apiKey,
+        Accept: "application/hal+json, application/json",
+        "Content-Crs": "epsg:4258",
+        "Accept-Crs": "epsg:4258",
+        ...authHeaders(),
       },
       body: JSON.stringify(body),
       cache: "no-store",
@@ -74,7 +98,7 @@ export async function haalRegelsOp(lat: number, lon: number): Promise<RegelsOpLo
   } catch (err) {
     return {
       status: "fout",
-      melding: `Kon de DSO-API niet bereiken (${(err as Error).message}). Bekijk de regels handmatig via de officiele viewer.`,
+      melding: `Kon de Ruimtelijke Plannen API niet bereiken (${(err as Error).message}). Bekijk de regels handmatig via de officiele viewer.`,
       bevoegdGezag: null,
       regels: [],
       omgevingsloketUrl: loketUrl,
@@ -85,7 +109,9 @@ export async function haalRegelsOp(lat: number, lon: number): Promise<RegelsOpLo
     return {
       status: "fout",
       melding:
-        "De DSO-API wees de API-key af (ongeldig of nog niet actief). Controleer DSO_API_KEY, of bekijk de regels handmatig via de officiele viewer.",
+        "De Ruimtelijke Plannen API wees het verzoek af (401/403). Vraag een gratis DSO_API_KEY aan via " +
+        "https://developer.omgevingswet.overheid.nl/formulieren/api-key-aanvragen-0/ en zet die in .env.local, " +
+        "of bekijk de regels handmatig via de officiele viewer.",
       bevoegdGezag: null,
       regels: [],
       omgevingsloketUrl: loketUrl,
@@ -95,7 +121,7 @@ export async function haalRegelsOp(lat: number, lon: number): Promise<RegelsOpLo
   if (res.status === 404) {
     return {
       status: "geen_dekking",
-      melding: "Geen omgevingsdocumenten gevonden voor deze locatie in de DSO-index.",
+      melding: "Geen leidende plannen gevonden voor deze locatie.",
       bevoegdGezag: null,
       regels: [],
       omgevingsloketUrl: loketUrl,
@@ -105,55 +131,70 @@ export async function haalRegelsOp(lat: number, lon: number): Promise<RegelsOpLo
   if (!res.ok) {
     return {
       status: "fout",
-      melding: `De DSO-API gaf een onverwachte fout (HTTP ${res.status}). Bekijk de regels handmatig via de officiele viewer, en controleer of DSO_BASE_URL/DSO_REGELS_PATH nog overeenkomen met de actuele OpenAPI-spec op het Ontwikkelaarsportaal.`,
+      melding: `De Ruimtelijke Plannen API gaf een onverwachte fout (HTTP ${res.status}). Bekijk de regels handmatig via de officiele viewer, en controleer of DSO_BASE_URL nog overeenkomt met de actuele OpenAPI-spec (PDOK/open-api-specs op GitHub).`,
       bevoegdGezag: null,
       regels: [],
       omgevingsloketUrl: loketUrl,
     };
   }
 
-  let data: DsoZoekResponse;
+  let data: RpZoekResponse;
   try {
-    data = (await res.json()) as DsoZoekResponse;
+    data = (await res.json()) as RpZoekResponse;
   } catch {
     return {
       status: "fout",
-      melding: "De DSO-API gaf een antwoord dat niet als JSON gelezen kon worden.",
+      melding: "De Ruimtelijke Plannen API gaf een antwoord dat niet als JSON gelezen kon worden.",
       bevoegdGezag: null,
       regels: [],
       omgevingsloketUrl: loketUrl,
     };
   }
 
-  const regels: OmgevingsdocumentRegel[] = (data.resultaten ?? []).flatMap((resultaat) => {
-    const teksten = resultaat.regelteksten?.length
-      ? resultaat.regelteksten
-      : [{ tekst: undefined, identificatie: undefined }];
-    return teksten.map((rt) => ({
-      documentTitel: resultaat.omgevingsdocument?.titel ?? "Onbekend omgevingsdocument",
-      documentType: resultaat.omgevingsdocument?.type ?? "onbekend",
-      bekendOnder: resultaat.omgevingsdocument?.bekendOnder ?? null,
-      identificatie: rt.identificatie ?? resultaat.omgevingsdocument?.identificatie ?? null,
-      regelTekst: rt.tekst ?? "(geen regeltekst meegegeven door de API)",
-      bron: "dso" as const,
-      brondocumentUrl: resultaat.documentUrl ?? null,
-    }));
-  });
-
-  if (regels.length === 0) {
+  const plannen = data._embedded?.plannen ?? [];
+  if (plannen.length === 0) {
     return {
       status: "geen_dekking",
-      melding: "De DSO-API gaf geen regels terug voor deze locatie.",
-      bevoegdGezag: data.bevoegdGezag?.naam ?? null,
+      melding: "Geen leidende plannen gevonden voor deze locatie.",
+      bevoegdGezag: null,
       regels: [],
       omgevingsloketUrl: loketUrl,
     };
+  }
+
+  const regels: OmgevingsdocumentRegel[] = [];
+  for (const plan of plannen) {
+    const teksten = plan._links?.teksten?.href ? await haalTekstenOp(plan._links.teksten.href) : [];
+    if (teksten.length === 0) {
+      regels.push({
+        documentTitel: plan.naam ?? "Onbekend plan",
+        documentType: plan.type ?? "onbekend",
+        bekendOnder: plan.planstatusInfo?.planstatus ?? null,
+        identificatie: plan.id ?? null,
+        regelTekst:
+          "(Geen regeltekst automatisch kunnen ophalen voor dit plan; bekijk de volledige tekst via de officiele viewer of het brondocument.)",
+        bron: "dso",
+        brondocumentUrl: plan._links?.self?.href ?? null,
+      });
+    } else {
+      for (const tekst of teksten) {
+        regels.push({
+          documentTitel: plan.naam ?? "Onbekend plan",
+          documentType: plan.type ?? "onbekend",
+          bekendOnder: plan.planstatusInfo?.planstatus ?? null,
+          identificatie: plan.id ?? null,
+          regelTekst: tekst,
+          bron: "dso",
+          brondocumentUrl: plan._links?.self?.href ?? null,
+        });
+      }
+    }
   }
 
   return {
     status: "ok",
     melding: null,
-    bevoegdGezag: data.bevoegdGezag?.naam ?? null,
+    bevoegdGezag: null,
     regels,
     omgevingsloketUrl: loketUrl,
   };
