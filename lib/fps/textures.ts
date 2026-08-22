@@ -82,16 +82,21 @@ export interface PbrMapSet {
   aoMap: THREE.CanvasTexture;
 }
 
-function finalize(tex: THREE.CanvasTexture, repeat: number) {
+// Tiling is applied per-geometry via world-space UV remapping (see world.ts's
+// remapBoxUV) rather than a single material.repeat, since a shared material is
+// reused across boxes of very different proportions (a 34-unit wall and a
+// 1.2-unit crate) — a uniform repeat stretches/aliases badly on the elongated
+// ones. Keep the texture's own repeat at identity.
+function finalize(tex: THREE.CanvasTexture) {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(repeat, repeat);
+  tex.repeat.set(1, 1);
   tex.anisotropy = 16;
   tex.needsUpdate = true;
   return tex;
 }
 
 /** Brushed / grimy concrete floor panel. */
-export function makeConcreteMaps(repeat = 6): PbrMapSet {
+export function makeConcreteMaps(): PbrMapSet {
   const size = 512;
   const noise = makeNoise2D(11);
   const { canvas, ctx } = makeCanvas(size);
@@ -135,14 +140,14 @@ export function makeConcreteMaps(repeat = 6): PbrMapSet {
     ctx.stroke();
   }
 
-  const map = finalize(new THREE.CanvasTexture(canvas), repeat);
+  const map = finalize(new THREE.CanvasTexture(canvas));
   map.colorSpace = THREE.SRGBColorSpace;
 
   const normalCanvas = document.createElement("canvas");
   normalCanvas.width = size;
   normalCanvas.height = size;
   normalCanvas.getContext("2d")!.putImageData(heightToNormalMap(height, size, 3.2), 0, 0);
-  const normalMap = finalize(new THREE.CanvasTexture(normalCanvas), repeat);
+  const normalMap = finalize(new THREE.CanvasTexture(normalCanvas));
 
   const { canvas: roughCanvas, ctx: roughCtx } = makeCanvas(size);
   for (let y = 0; y < size; y++) {
@@ -153,7 +158,7 @@ export function makeConcreteMaps(repeat = 6): PbrMapSet {
       roughCtx.fillRect(x, y, 1, 1);
     }
   }
-  const roughnessMap = finalize(new THREE.CanvasTexture(roughCanvas), repeat);
+  const roughnessMap = finalize(new THREE.CanvasTexture(roughCanvas));
 
   const { canvas: aoCanvas, ctx: aoCtx } = makeCanvas(size);
   aoCtx.fillStyle = "#fff";
@@ -170,13 +175,13 @@ export function makeConcreteMaps(repeat = 6): PbrMapSet {
     aoCtx.lineTo(size, i * cell);
     aoCtx.stroke();
   }
-  const aoMap = finalize(new THREE.CanvasTexture(aoCanvas), repeat);
+  const aoMap = finalize(new THREE.CanvasTexture(aoCanvas));
 
   return { map, normalMap, roughnessMap, aoMap };
 }
 
 /** Industrial metal-panel wall with rivets and rust streaks. */
-export function makeMetalPanelMaps(repeat = 3): PbrMapSet {
+export function makeMetalPanelMaps(): PbrMapSet {
   const size = 512;
   const noise = makeNoise2D(77);
   const { canvas, ctx } = makeCanvas(size);
@@ -244,14 +249,14 @@ export function makeMetalPanelMaps(repeat = 3): PbrMapSet {
     ctx.fill();
   }
 
-  const map = finalize(new THREE.CanvasTexture(canvas), repeat);
+  const map = finalize(new THREE.CanvasTexture(canvas));
   map.colorSpace = THREE.SRGBColorSpace;
 
   const normalCanvas = document.createElement("canvas");
   normalCanvas.width = size;
   normalCanvas.height = size;
   normalCanvas.getContext("2d")!.putImageData(heightToNormalMap(height, size, 1.6), 0, 0);
-  const normalMap = finalize(new THREE.CanvasTexture(normalCanvas), repeat);
+  const normalMap = finalize(new THREE.CanvasTexture(normalCanvas));
 
   const { canvas: roughCanvas, ctx: roughCtx } = makeCanvas(size);
   roughCtx.fillStyle = "#777";
@@ -260,7 +265,7 @@ export function makeMetalPanelMaps(repeat = 3): PbrMapSet {
     roughCtx.fillStyle = `rgba(${Math.random() > 0.5 ? 40 : 210},${Math.random() > 0.5 ? 40 : 210},${Math.random() > 0.5 ? 40 : 210},0.15)`;
     roughCtx.fillRect(Math.random() * size, Math.random() * size, 2, 20 + Math.random() * 40);
   }
-  const roughnessMap = finalize(new THREE.CanvasTexture(roughCanvas), repeat);
+  const roughnessMap = finalize(new THREE.CanvasTexture(roughCanvas));
 
   const { canvas: aoCanvas, ctx: aoCtx } = makeCanvas(size);
   aoCtx.fillStyle = "#fff";
@@ -279,13 +284,13 @@ export function makeMetalPanelMaps(repeat = 3): PbrMapSet {
     aoCtx.lineTo(size, j * ph);
     aoCtx.stroke();
   }
-  const aoMap = finalize(new THREE.CanvasTexture(aoCanvas), repeat);
+  const aoMap = finalize(new THREE.CanvasTexture(aoCanvas));
 
   return { map, normalMap, roughnessMap, aoMap };
 }
 
 /** Hazard-striped/painted trim strip used as an accent. */
-export function makeHazardTrimMaps(repeat = 4): PbrMapSet {
+export function makeHazardTrimMaps(): PbrMapSet {
   const size = 256;
   const { canvas, ctx } = makeCanvas(size);
   const stripe = size / 8;
@@ -297,7 +302,7 @@ export function makeHazardTrimMaps(repeat = 4): PbrMapSet {
     ctx.fillRect(-40, 0, stripe + 80, size);
     ctx.restore();
   }
-  const map = finalize(new THREE.CanvasTexture(canvas), repeat);
+  const map = finalize(new THREE.CanvasTexture(canvas));
   map.colorSpace = THREE.SRGBColorSpace;
 
   const height = new Float32Array(size * size).fill(0.5);
@@ -305,23 +310,23 @@ export function makeHazardTrimMaps(repeat = 4): PbrMapSet {
   normalCanvas.width = size;
   normalCanvas.height = size;
   normalCanvas.getContext("2d")!.putImageData(heightToNormalMap(height, size, 0.2), 0, 0);
-  const normalMap = finalize(new THREE.CanvasTexture(normalCanvas), repeat);
+  const normalMap = finalize(new THREE.CanvasTexture(normalCanvas));
 
   const { canvas: roughCanvas, ctx: roughCtx } = makeCanvas(size);
   roughCtx.fillStyle = "#555";
   roughCtx.fillRect(0, 0, size, size);
-  const roughnessMap = finalize(new THREE.CanvasTexture(roughCanvas), repeat);
+  const roughnessMap = finalize(new THREE.CanvasTexture(roughCanvas));
 
   const { canvas: aoCanvas, ctx: aoCtx } = makeCanvas(size);
   aoCtx.fillStyle = "#fff";
   aoCtx.fillRect(0, 0, size, size);
-  const aoMap = finalize(new THREE.CanvasTexture(aoCanvas), repeat);
+  const aoMap = finalize(new THREE.CanvasTexture(aoCanvas));
 
   return { map, normalMap, roughnessMap, aoMap };
 }
 
 /** Wood-crate texture for cover props. */
-export function makeCrateMaps(repeat = 1): PbrMapSet {
+export function makeCrateMaps(): PbrMapSet {
   const size = 256;
   const noise = makeNoise2D(33);
   const { canvas, ctx } = makeCanvas(size);
@@ -345,24 +350,24 @@ export function makeCrateMaps(repeat = 1): PbrMapSet {
   ctx.lineTo(size, size / 2);
   ctx.stroke();
 
-  const map = finalize(new THREE.CanvasTexture(canvas), repeat);
+  const map = finalize(new THREE.CanvasTexture(canvas));
   map.colorSpace = THREE.SRGBColorSpace;
 
   const normalCanvas = document.createElement("canvas");
   normalCanvas.width = size;
   normalCanvas.height = size;
   normalCanvas.getContext("2d")!.putImageData(heightToNormalMap(height, size, 2.0), 0, 0);
-  const normalMap = finalize(new THREE.CanvasTexture(normalCanvas), repeat);
+  const normalMap = finalize(new THREE.CanvasTexture(normalCanvas));
 
   const { canvas: roughCanvas, ctx: roughCtx } = makeCanvas(size);
   roughCtx.fillStyle = "#8a8a8a";
   roughCtx.fillRect(0, 0, size, size);
-  const roughnessMap = finalize(new THREE.CanvasTexture(roughCanvas), repeat);
+  const roughnessMap = finalize(new THREE.CanvasTexture(roughCanvas));
 
   const { canvas: aoCanvas, ctx: aoCtx } = makeCanvas(size);
   aoCtx.fillStyle = "#fff";
   aoCtx.fillRect(0, 0, size, size);
-  const aoMap = finalize(new THREE.CanvasTexture(aoCanvas), repeat);
+  const aoMap = finalize(new THREE.CanvasTexture(aoCanvas));
 
   return { map, normalMap, roughnessMap, aoMap };
 }
@@ -382,6 +387,27 @@ export function makeSkyGradientTexture(): THREE.CanvasTexture {
   ctx.fillRect(0, 0, 2, 256);
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+/**
+ * Soft radial-gradient blob used as a cheap fake contact shadow under props/
+ * characters — a backstop that guarantees objects read as grounded even where
+ * the real-time shadow map or SSAO don't resolve a hard contact shadow.
+ */
+export function makeBlobShadowTexture(): THREE.CanvasTexture {
+  const size = 128;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, "rgba(0,0,0,0.55)");
+  grad.addColorStop(0.6, "rgba(0,0,0,0.32)");
+  grad.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
   tex.needsUpdate = true;
   return tex;
 }

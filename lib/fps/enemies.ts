@@ -1,5 +1,20 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
+import { makeBlobShadowTexture } from "./textures";
+
+let sharedBlobShadowMat: THREE.MeshBasicMaterial | null = null;
+function getBlobShadowMat() {
+  if (!sharedBlobShadowMat) {
+    sharedBlobShadowMat = new THREE.MeshBasicMaterial({
+      map: makeBlobShadowTexture(),
+      transparent: true,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+    });
+  }
+  return sharedBlobShadowMat;
+}
 
 type AIState = "patrol" | "chase" | "attack" | "dead";
 
@@ -108,7 +123,7 @@ export class Enemy {
         mesh.add(hand);
       } else {
         const boot = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.14, d + 0.05), bootMat);
-        boot.position.set(0, -h / 2 + 0.03, 0.015);
+        boot.position.set(0, -h / 2 + 0.03, -0.015);
         mesh.add(boot);
       }
     }
@@ -130,6 +145,13 @@ export class Enemy {
     );
     this.muzzleFlashMesh.position.set(0.34, 1.15, -0.3);
     this.group.add(this.muzzleFlashMesh);
+
+    // Cheap fake contact shadow: guarantees the soldier reads as grounded even
+    // where the real-time shadow map / SSAO don't resolve a hard contact shadow.
+    const blob = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), getBlobShadowMat());
+    blob.rotation.x = -Math.PI / 2;
+    blob.position.set(0, 0.02, 0);
+    this.group.add(blob);
 
     this.pickNewPatrolTarget();
   }
@@ -289,7 +311,9 @@ export class Enemy {
     if (dir.length() > 0.05) {
       dir.normalize();
       this.group.position.addScaledVector(dir, speed * dt);
-      const targetAngle = Math.atan2(dir.x, dir.z);
+      // Local -Z is "front" (matches the visor/muzzle placement and the engine-wide
+      // -Z-forward convention used by the player camera), so aim -Z at the target.
+      const targetAngle = Math.atan2(-dir.x, -dir.z);
       this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, targetAngle, 8, dt);
     }
   }

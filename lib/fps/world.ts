@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
-import { makeConcreteMaps, makeMetalPanelMaps, makeHazardTrimMaps, makeCrateMaps, makeSkyGradientTexture } from "./textures";
+import { makeConcreteMaps, makeMetalPanelMaps, makeHazardTrimMaps, makeCrateMaps, makeSkyGradientTexture, makeBlobShadowTexture } from "./textures";
 
 export interface ColliderBox {
   mesh: THREE.Object3D;
@@ -30,12 +30,53 @@ function pbrMaterial(maps: ReturnType<typeof makeConcreteMaps>, extra: THREE.Mes
   });
 }
 
+/**
+ * BoxGeometry maps every face to the same 0..1 UV square regardless of that
+ * face's real-world size, so a single shared material's texture repeat stretches
+ * (and moiré-aliases) badly on elongated boxes like a 34-unit wall or a 0.5-unit-
+ * tall trim strip. Rescale each face's UVs by its own real dimensions instead, so
+ * `texelSize` (world units per texture tile) reads consistently everywhere.
+ */
+function remapBoxUV(geo: THREE.BoxGeometry, w: number, h: number, d: number, texelSize: number) {
+  const uv = geo.attributes.uv as THREE.BufferAttribute;
+  // BoxGeometry face order: +x, -x, +y, -y, +z, -z — 4 vertices each.
+  const faceDims: [number, number][] = [
+    [d, h],
+    [d, h],
+    [w, d],
+    [w, d],
+    [w, h],
+    [w, h],
+  ];
+  for (let face = 0; face < 6; face++) {
+    const [fw, fh] = faceDims[face];
+    const su = fw / texelSize;
+    const sv = fh / texelSize;
+    for (let v = 0; v < 4; v++) {
+      const idx = face * 4 + v;
+      uv.setXY(idx, uv.getX(idx) * su, uv.getY(idx) * sv);
+    }
+  }
+  uv.needsUpdate = true;
+}
+
 function addUv2(geo: THREE.BufferGeometry) {
   geo.setAttribute("uv2", new THREE.BufferAttribute(geo.attributes.uv.array, 2));
 }
 
-function box(w: number, h: number, d: number, mat: THREE.Material, pos: THREE.Vector3, world: World, physicsWorld: CANNON.World, mass = 0) {
+function box(
+  w: number,
+  h: number,
+  d: number,
+  mat: THREE.Material,
+  pos: THREE.Vector3,
+  world: World,
+  physicsWorld: CANNON.World,
+  mass = 0,
+  texelSize = 3
+) {
   const geo = new THREE.BoxGeometry(w, h, d);
+  remapBoxUV(geo, w, h, d, texelSize);
   addUv2(geo);
   const mesh = new THREE.Mesh(geo, mat);
   mesh.position.copy(pos);
@@ -64,10 +105,10 @@ export function buildWorld(physicsWorld: CANNON.World): World {
     animate: () => {},
   };
 
-  const concrete = makeConcreteMaps(10);
-  const metal = makeMetalPanelMaps(5);
-  const hazard = makeHazardTrimMaps(3);
-  const crateMaps = makeCrateMaps(1);
+  const concrete = makeConcreteMaps();
+  const metal = makeMetalPanelMaps();
+  const hazard = makeHazardTrimMaps();
+  const crateMaps = makeCrateMaps();
 
   const floorMat = pbrMaterial(concrete, { roughness: 0.95, metalness: 0.05, color: 0xffffff });
   const wallMat = pbrMaterial(metal, { roughness: 0.55, metalness: 0.75, color: 0xffffff });
@@ -75,7 +116,7 @@ export function buildWorld(physicsWorld: CANNON.World): World {
   const crateMat = pbrMaterial(crateMaps, { roughness: 0.85, metalness: 0.0, color: 0xffffff });
 
   // Floor
-  box(ARENA_SIZE, 1, ARENA_SIZE, floorMat, new THREE.Vector3(0, -0.5, 0), world, physicsWorld, 0);
+  box(ARENA_SIZE, 1, ARENA_SIZE, floorMat, new THREE.Vector3(0, -0.5, 0), world, physicsWorld, 0, 3.5);
 
   const half = ARENA_SIZE / 2;
 
@@ -87,6 +128,7 @@ export function buildWorld(physicsWorld: CANNON.World): World {
   const frameY = WALL_HEIGHT;
   const addCeilingPiece = (w: number, d: number, x: number, z: number) => {
     const geo = new THREE.BoxGeometry(w, 0.6, d);
+    remapBoxUV(geo, w, 0.6, d, 3);
     addUv2(geo);
     const mesh = new THREE.Mesh(geo, ceilingMat);
     mesh.position.set(x, frameY, z);
@@ -105,10 +147,10 @@ export function buildWorld(physicsWorld: CANNON.World): World {
 
   // Perimeter walls with a gap (entrances) on N/S for sightlines
   const wallThickness = 1;
-  box(ARENA_SIZE, WALL_HEIGHT, wallThickness, wallMat, new THREE.Vector3(0, WALL_HEIGHT / 2, -half), world, physicsWorld, 0);
-  box(ARENA_SIZE, WALL_HEIGHT, wallThickness, wallMat, new THREE.Vector3(0, WALL_HEIGHT / 2, half), world, physicsWorld, 0);
-  box(wallThickness, WALL_HEIGHT, ARENA_SIZE, wallMat, new THREE.Vector3(-half, WALL_HEIGHT / 2, 0), world, physicsWorld, 0);
-  box(wallThickness, WALL_HEIGHT, ARENA_SIZE, wallMat, new THREE.Vector3(half, WALL_HEIGHT / 2, 0), world, physicsWorld, 0);
+  box(ARENA_SIZE, WALL_HEIGHT, wallThickness, wallMat, new THREE.Vector3(0, WALL_HEIGHT / 2, -half), world, physicsWorld, 0, 3);
+  box(ARENA_SIZE, WALL_HEIGHT, wallThickness, wallMat, new THREE.Vector3(0, WALL_HEIGHT / 2, half), world, physicsWorld, 0, 3);
+  box(wallThickness, WALL_HEIGHT, ARENA_SIZE, wallMat, new THREE.Vector3(-half, WALL_HEIGHT / 2, 0), world, physicsWorld, 0, 3);
+  box(wallThickness, WALL_HEIGHT, ARENA_SIZE, wallMat, new THREE.Vector3(half, WALL_HEIGHT / 2, 0), world, physicsWorld, 0, 3);
 
   // Hazard trim band along the base of walls
   for (const [pos, size] of [
@@ -118,6 +160,7 @@ export function buildWorld(physicsWorld: CANNON.World): World {
     [new THREE.Vector3(half - 0.51, 0.6, 0), [0.05, 0.5, ARENA_SIZE]],
   ] as const) {
     const geo = new THREE.BoxGeometry(size[0], size[1], size[2]);
+    remapBoxUV(geo, size[0], size[1], size[2], 1.4);
     addUv2(geo);
     const mesh = new THREE.Mesh(geo, trimMat);
     mesh.position.copy(pos);
@@ -126,9 +169,10 @@ export function buildWorld(physicsWorld: CANNON.World): World {
 
   // Central raised platform (verticality / sightline break, classic arena-shooter device)
   const platformMat = pbrMaterial(concrete, { roughness: 0.9, metalness: 0.1, color: 0xdadada });
-  box(8, 1.2, 8, platformMat, new THREE.Vector3(0, 0.1, 0), world, physicsWorld, 0);
+  box(8, 1.2, 8, platformMat, new THREE.Vector3(0, 0.1, 0), world, physicsWorld, 0, 3.5);
   // ramps up to platform
   const rampGeo = new THREE.BoxGeometry(3, 0.3, 5);
+  remapBoxUV(rampGeo, 3, 0.3, 5, 3.5);
   addUv2(rampGeo);
   const ramp = new THREE.Mesh(rampGeo, platformMat);
   ramp.position.set(0, 0.35, 6.2);
@@ -151,9 +195,20 @@ export function buildWorld(physicsWorld: CANNON.World): World {
     [12, 0.6, -3, -0.5],
     [-4, 0.6, 12, 0.15],
   ];
+  const blobShadowTex = makeBlobShadowTexture();
+  const blobShadowMat = new THREE.MeshBasicMaterial({ map: blobShadowTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  const addBlobShadow = (x: number, z: number, radius: number, parent: THREE.Object3D, localY: number) => {
+    const blob = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2, radius * 2), blobShadowMat);
+    blob.rotation.x = -Math.PI / 2;
+    blob.position.set(x, localY, z);
+    parent.add(blob);
+    return blob;
+  };
+
   for (const [x, y, z, rot] of cratePositions) {
-    const mesh = box(1.2, 1.2, 1.2, crateMat, new THREE.Vector3(x, y, z), world, physicsWorld, 0);
+    const mesh = box(1.2, 1.2, 1.2, crateMat, new THREE.Vector3(x, y, z), world, physicsWorld, 0, 1.2);
     mesh.rotation.y = rot;
+    addBlobShadow(x, z, 1.1, group, 0.02);
     world.colliders[world.colliders.length - 1].body.quaternion.setFromEuler(0, rot, 0);
   }
 
@@ -194,10 +249,14 @@ export function buildWorld(physicsWorld: CANNON.World): World {
   sun.shadow.camera.right = 20;
   sun.shadow.camera.top = 20;
   sun.shadow.camera.bottom = -20;
-  sun.shadow.bias = -0.0035;
-  sun.shadow.normalBias = 0.09;
-  sun.shadow.radius = 6;
-  sun.shadow.blurSamples = 12;
+  // Keep bias/normalBias small — the earlier acne came from the sealed ceiling
+  // (fixed above), not from needing a huge bias, and an oversized normalBias was
+  // pushing shadow samples past small objects (crates, enemy limbs) entirely,
+  // making their contact shadows disappear (peter-panning).
+  sun.shadow.bias = -0.0012;
+  sun.shadow.normalBias = 0.012;
+  sun.shadow.radius = 4;
+  sun.shadow.blurSamples = 10;
   group.add(sun);
   group.add(sun.target);
   world.lights.push(sun);

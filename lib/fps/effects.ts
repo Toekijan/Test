@@ -118,10 +118,15 @@ export function createRenderPipeline(
   const renderPass = new RenderPass(scene, camera);
   composer.addPass(renderPass);
 
+  // SSAOPass's min/maxDistance are fractions of the full camera near..far range
+  // (normalized "orthographic depth"), not world units — with far=300 the previous
+  // 0.002/0.1 values corresponded to a ~0.6..30 unit occlusion band, which is far
+  // too coarse to ever register contact shadows at the 1-20cm scale objects
+  // actually touch the floor at. Scaled down ~60x to catch that band instead.
   const ssaoPass = new SSAOPass(scene, camera, width, height);
   ssaoPass.kernelRadius = 5;
-  ssaoPass.minDistance = 0.002;
-  ssaoPass.maxDistance = 0.1;
+  ssaoPass.minDistance = 0.00003;
+  ssaoPass.maxDistance = 0.003;
   composer.addPass(ssaoPass);
 
   // Composite the viewmodel into the buffer chain here (after AO, before bloom/AA/grade)
