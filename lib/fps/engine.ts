@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import * as CANNON from "cannon-es";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { buildWorld, World } from "./world";
 import { createRenderPipeline, RenderPipeline } from "./effects";
 import { Player } from "./player";
@@ -28,6 +29,8 @@ export class FpsEngine {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
+  private weaponScene: THREE.Scene;
+  private weaponCamera: THREE.PerspectiveCamera;
   private physicsWorld: CANNON.World;
   private world: World;
   private player: Player;
@@ -50,6 +53,7 @@ export class FpsEngine {
     this.renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: "high-performance" });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(container.clientWidth, container.clientHeight);
+    this.renderer.autoClear = false;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -61,8 +65,26 @@ export class FpsEngine {
     this.scene.fog = new THREE.FogExp2(0x1a1610, 0.016);
     setWeaponSceneRef(this.scene);
 
+    const pmrem = new THREE.PMREMGenerator(this.renderer);
+    const envTexture = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    this.scene.environment = envTexture;
+    pmrem.dispose();
+
     this.camera = new THREE.PerspectiveCamera(78, container.clientWidth / container.clientHeight, 0.05, 300);
     this.scene.add(this.camera);
+
+    // Viewmodel renders through its own low-FOV camera/scene so the weapon doesn't
+    // stretch into a converging plank under the wide gameplay FOV, matching how
+    // real FPS renderers separate the world and hands/weapon render passes.
+    this.weaponScene = new THREE.Scene();
+    this.weaponScene.environment = envTexture;
+    this.weaponCamera = new THREE.PerspectiveCamera(58, container.clientWidth / container.clientHeight, 0.01, 10);
+    this.weaponScene.add(this.weaponCamera);
+    const weaponKeyLight = new THREE.DirectionalLight(0xfff2e0, 2.4);
+    weaponKeyLight.position.set(0.4, 1, 0.6);
+    this.weaponCamera.add(weaponKeyLight);
+    const weaponFillLight = new THREE.HemisphereLight(0x88aaff, 0x201810, 0.9);
+    this.weaponScene.add(weaponFillLight);
 
     this.physicsWorld = new CANNON.World({ gravity: new CANNON.Vec3(0, -18, 0) });
     this.physicsWorld.broadphase = new CANNON.SAPBroadphase(this.physicsWorld);
@@ -74,7 +96,7 @@ export class FpsEngine {
     this.player = new Player(this.camera, this.physicsWorld, this.world.spawnPoints[0]);
     this.player.onFootstep = () => this.audio.footstep(0.25 + Math.random() * 0.1);
 
-    this.weapon = new Weapon(this.scene, this.camera);
+    this.weapon = new Weapon(this.weaponScene, this.weaponCamera);
     this.weapon.onShoot = () => {
       this.audio.gunshot(1, 0.7);
       this.pushHudUpdate();
@@ -187,6 +209,8 @@ export class FpsEngine {
     const h = this.container.clientHeight;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.weaponCamera.aspect = w / h;
+    this.weaponCamera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
     this.pipeline.resize(w, h);
   };
@@ -310,9 +334,12 @@ export class FpsEngine {
 
       this.enemyManager.update(dt, this.player.position, this.hasLineOfSight);
       this.world.animate(t, dt);
-      this.pipeline.update(t);
+      this.pipeline.update(t, dt);
 
       this.pipeline.composer.render();
+      this.renderer.setRenderTarget(null);
+      this.renderer.clearDepth();
+      this.renderer.render(this.weaponScene, this.weaponCamera);
     };
     loop();
   }

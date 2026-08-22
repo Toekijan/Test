@@ -135,6 +135,9 @@ export class Weapon {
     this.ammoInMag = stats.magSize;
 
     this.bobSwayGroup = new THREE.Group();
+    // Constant "hero angle" cant so the receiver's side catches light instead of
+    // presenting a flat end-on silhouette straight down the barrel.
+    this.bobSwayGroup.rotation.set(0.012, -0.05, 0.028);
     this.mesh = buildRifleMesh();
     this.mesh.position.copy(this.basePosition);
     this.bobSwayGroup.add(this.mesh);

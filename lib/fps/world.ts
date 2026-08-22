@@ -77,12 +77,33 @@ export function buildWorld(physicsWorld: CANNON.World): World {
   // Floor
   box(ARENA_SIZE, 1, ARENA_SIZE, floorMat, new THREE.Vector3(0, -0.5, 0), world, physicsWorld, 0);
 
-  // Ceiling (industrial, keeps interior lighting contained + adds silhouette variety)
-  const ceilingMat = pbrMaterial(metal, { roughness: 0.9, metalness: 0.3, color: 0x1a1c20 });
-  box(ARENA_SIZE, 0.6, ARENA_SIZE, ceilingMat, new THREE.Vector3(0, WALL_HEIGHT, 0), world, physicsWorld, 0);
+  const half = ARENA_SIZE / 2;
+
+  // Ceiling: a perimeter frame + crossing trusses with a large open skylight in the
+  // middle, so the "sun" directional light and dusk sky can actually reach the arena
+  // floor instead of being fully self-shadowed by a sealed roof.
+  const ceilingMat = pbrMaterial(metal, { roughness: 0.75, metalness: 0.5, color: 0x2a2d33 });
+  const frameWidth = 5;
+  const frameY = WALL_HEIGHT;
+  const addCeilingPiece = (w: number, d: number, x: number, z: number) => {
+    const geo = new THREE.BoxGeometry(w, 0.6, d);
+    addUv2(geo);
+    const mesh = new THREE.Mesh(geo, ceilingMat);
+    mesh.position.set(x, frameY, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+  };
+  addCeilingPiece(ARENA_SIZE, frameWidth, 0, -half + frameWidth / 2);
+  addCeilingPiece(ARENA_SIZE, frameWidth, 0, half - frameWidth / 2);
+  addCeilingPiece(frameWidth, ARENA_SIZE - frameWidth * 2, -half + frameWidth / 2, 0);
+  addCeilingPiece(frameWidth, ARENA_SIZE - frameWidth * 2, half - frameWidth / 2, 0);
+  // Crossing trusses over the skylight opening for silhouette + dappled shadow detail
+  addCeilingPiece(ARENA_SIZE - frameWidth * 2, 0.8, 0, 0);
+  addCeilingPiece(0.8, ARENA_SIZE - frameWidth * 2, -7, 0);
+  addCeilingPiece(0.8, ARENA_SIZE - frameWidth * 2, 7, 0);
 
   // Perimeter walls with a gap (entrances) on N/S for sightlines
-  const half = ARENA_SIZE / 2;
   const wallThickness = 1;
   box(ARENA_SIZE, WALL_HEIGHT, wallThickness, wallMat, new THREE.Vector3(0, WALL_HEIGHT / 2, -half), world, physicsWorld, 0);
   box(ARENA_SIZE, WALL_HEIGHT, wallThickness, wallMat, new THREE.Vector3(0, WALL_HEIGHT / 2, half), world, physicsWorld, 0);
@@ -181,31 +202,51 @@ export function buildWorld(physicsWorld: CANNON.World): World {
   group.add(sun.target);
   world.lights.push(sun);
 
-  const hemi = new THREE.HemisphereLight(0x3a5a8a, 0x1a1410, 3.2);
+  const hemi = new THREE.HemisphereLight(0x3a5a8a, 0x241c14, 1.1);
   group.add(hemi);
   world.lights.push(hemi);
 
-  // Practical point lights (industrial lamps) with subtle flicker for atmosphere
-  const lampPositions: [number, number, number, number][] = [
-    [-8, 6.2, -8, 0xffab6b],
-    [8, 6.2, 8, 0x7fc4e8],
-    [0, 6.2, -13, 0xffe0a3],
-    [0, 3.4, 13, 0xff8866],
+  // Practical point lights (industrial lamps) with a cage fixture + mounting bracket,
+  // subtle flicker, and contact shadows on the two most prominent lamps.
+  const lampPositions: [number, number, number, number, boolean][] = [
+    [-8, 6.2, -8, 0xffab6b, true],
+    [8, 6.2, 8, 0x7fc4e8, true],
+    [0, 6.2, -13, 0xffe0a3, false],
+    [0, 3.4, 13, 0xff8866, false],
   ];
+  const bracketMat = new THREE.MeshStandardMaterial({ color: 0x14151a, roughness: 0.5, metalness: 0.6 });
   const flickerLights: { light: THREE.PointLight; base: number; phase: number }[] = [];
-  for (const [x, y, z, color] of lampPositions) {
-    const light = new THREE.PointLight(color, 26, 14, 2);
+  for (const [x, y, z, color, shadows] of lampPositions) {
+    const light = new THREE.PointLight(color, 22, 13, 2);
     light.position.set(x, y, z);
-    light.castShadow = false;
+    light.castShadow = shadows;
+    if (shadows) {
+      light.shadow.mapSize.set(512, 512);
+      light.shadow.camera.near = 0.3;
+      light.shadow.camera.far = 14;
+      light.shadow.bias = -0.002;
+    }
     group.add(light);
     world.lights.push(light);
-    flickerLights.push({ light, base: 26, phase: Math.random() * 10 });
+    flickerLights.push({ light, base: 22, phase: Math.random() * 10 });
 
-    const fixtureGeo = new THREE.SphereGeometry(0.18, 12, 12);
-    const fixtureMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 3, roughness: 0.3 });
+    const fixtureGeo = new THREE.SphereGeometry(0.15, 12, 12);
+    const fixtureMat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 2.2, roughness: 0.3, toneMapped: true });
     const fixture = new THREE.Mesh(fixtureGeo, fixtureMat);
     fixture.position.set(x, y, z);
     group.add(fixture);
+
+    const cageGeo = new THREE.TorusGeometry(0.24, 0.015, 6, 16);
+    for (const rot of [0, Math.PI / 3, (Math.PI * 2) / 3]) {
+      const ring = new THREE.Mesh(cageGeo, bracketMat);
+      ring.position.set(x, y, z);
+      ring.rotation.set(Math.PI / 2, rot, 0);
+      group.add(ring);
+    }
+
+    const bracket = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.5, 8), bracketMat);
+    bracket.position.set(x, y + 0.35, z);
+    group.add(bracket);
   }
 
   world.spawnPoints.push(new THREE.Vector3(0, 1.7, 14));

@@ -53,7 +53,10 @@ export class Enemy {
     const uniform = makeSoldierMaterial(0x3c4534);
     const armor = makeSoldierMaterial(0x24291f, 0x1a0000);
     const skin = makeSoldierMaterial(0xb08765);
-    const visor = makeSoldierMaterial(0x101418, 0xff2200);
+    const helmet = makeSoldierMaterial(0x1e2118);
+    const visorMat = new THREE.MeshStandardMaterial({ color: 0x0a0c0e, emissive: 0xff2200, emissiveIntensity: 0.9, roughness: 0.3, metalness: 0.4 });
+    const padMat = makeSoldierMaterial(0x1a1d16, 0x0a0500);
+    const bootMat = makeSoldierMaterial(0x15130f);
 
     const torsoMesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.65, 0.32), armor);
     torsoMesh.position.set(0, 1.1, 0);
@@ -61,26 +64,54 @@ export class Enemy {
     this.group.add(torsoMesh);
     this.torso = { mesh: torsoMesh, body: null, offset: new THREE.Vector3(0, 1.1, 0) };
 
-    const headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.3, 0.28), visor);
+    // Chest rig accent + neck (purely decorative children — they inherit the
+    // torso mesh's transform automatically, including once it becomes a ragdoll body).
+    const chestRig = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.24, 0.06), padMat);
+    chestRig.position.set(0, 0.08, -0.17);
+    torsoMesh.add(chestRig);
+    const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, 0.12, 10), skin);
+    neck.position.set(0, 0.36, 0);
+    torsoMesh.add(neck);
+
+    const headMesh = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.28, 0.27), helmet);
     headMesh.position.set(0, 1.62, 0);
     headMesh.castShadow = true;
     this.group.add(headMesh);
     this.head = { mesh: headMesh, body: null, offset: new THREE.Vector3(0, 1.62, 0) };
 
+    const visorStrip = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.06, 0.03), visorMat);
+    visorStrip.position.set(0, -0.02, -0.14);
+    headMesh.add(visorStrip);
+    const helmetBrim = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.04, 0.3), helmet);
+    helmetBrim.position.set(0, 0.13, 0);
+    headMesh.add(helmetBrim);
+
     const limbDefs: [string, number, number, number, number, number, number, THREE.Material][] = [
-      ["armL", 0.34, 1.15, 0, 0.14, 0.5, 0.14, uniform],
-      ["armR", -0.34, 1.15, 0, 0.14, 0.5, 0.14, uniform],
-      ["legL", 0.14, 0.55, 0, 0.16, 0.6, 0.18, armor],
-      ["legR", -0.14, 0.55, 0, 0.16, 0.6, 0.18, armor],
+      ["armL", 0.34, 1.15, 0, 0.13, 0.48, 0.13, uniform],
+      ["armR", -0.34, 1.15, 0, 0.13, 0.48, 0.13, uniform],
+      ["legL", 0.14, 0.55, 0, 0.16, 0.58, 0.18, armor],
+      ["legR", -0.14, 0.55, 0, 0.16, 0.58, 0.18, armor],
     ];
-    for (const [, x, y, z, w, h, d, mat] of limbDefs) {
+    for (const [name, x, y, z, w, h, d, mat] of limbDefs) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
       mesh.position.set(x, y, z);
       mesh.castShadow = mesh.receiveShadow = true;
       this.group.add(mesh);
       this.limbs.push({ mesh, body: null, offset: new THREE.Vector3(x, y, z) });
+
+      if (name.startsWith("arm")) {
+        const shoulderPad = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.13, 0.19), padMat);
+        shoulderPad.position.set(0, h / 2 - 0.02, 0);
+        mesh.add(shoulderPad);
+        const hand = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.11), skin);
+        hand.position.set(0, -h / 2 - 0.05, 0);
+        mesh.add(hand);
+      } else {
+        const boot = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.14, d + 0.05), bootMat);
+        boot.position.set(0, -h / 2 + 0.03, 0.015);
+        mesh.add(boot);
+      }
     }
-    void skin;
 
     // Health bar billboard (two flat planes: backing + fill)
     this.healthBarGroup = new THREE.Group();

@@ -13,8 +13,8 @@ const GradeShader = {
     tDiffuse: { value: null },
     time: { value: 0 },
     vignetteStrength: { value: 0.3 },
-    grainStrength: { value: 0.02 },
-    aberration: { value: 0.0022 },
+    grainStrength: { value: 0.014 },
+    aberration: { value: 0.0005 },
     damageFlash: { value: 0.0 },
     lowHealthPulse: { value: 0.0 },
   },
@@ -36,15 +36,16 @@ const GradeShader = {
     varying vec2 vUv;
 
     float rand(vec2 co) {
-      return fract(sin(dot(co.xy, vec2(12.9898,78.233))) * 43758.5453);
+      return fract(sin(dot(co, vec2(12.9898,78.233))) * 43758.5453);
     }
 
     void main() {
       vec2 centered = vUv - 0.5;
       float dist = length(centered);
+      float edge = dist * dist;
 
       vec2 dir = normalize(centered + 1e-6);
-      float ab = aberration * (0.4 + dist);
+      float ab = aberration * edge;
       vec4 r = texture2D(tDiffuse, vUv - dir * ab);
       vec4 g = texture2D(tDiffuse, vUv);
       vec4 b = texture2D(tDiffuse, vUv + dir * ab);
@@ -53,13 +54,14 @@ const GradeShader = {
       float vignette = smoothstep(0.85, 0.25, dist * (1.0 + vignetteStrength));
       color *= mix(1.0 - vignetteStrength, 1.0, vignette);
 
-      float grain = (rand(vUv * time * 60.0) - 0.5) * grainStrength;
+      float luma = dot(color, vec3(0.299, 0.587, 0.114));
+      float grain = (rand(vUv + fract(time) * 0.6180339887) - 0.5) * grainStrength * mix(0.35, 1.0, luma);
       color += grain;
 
       float pulse = (sin(time * 6.0) * 0.5 + 0.5) * lowHealthPulse;
-      color = mix(color, vec3(0.55, 0.02, 0.02), pulse * 0.35 * smoothstep(0.15, 0.85, dist));
+      color = mix(color, vec3(0.55, 0.02, 0.02), pulse * 0.3 * edge);
 
-      color = mix(color, vec3(0.65, 0.03, 0.03), damageFlash * 0.55);
+      color = mix(color, vec3(0.65, 0.05, 0.05), damageFlash * 0.32 * mix(0.4, 1.0, edge));
 
       color = pow(color, vec3(0.98));
       gl_FragColor = vec4(color, 1.0);
@@ -72,7 +74,7 @@ export interface RenderPipeline {
   gradePass: ShaderPass;
   bloomPass: UnrealBloomPass;
   resize: (w: number, h: number) => void;
-  update: (t: number) => void;
+  update: (t: number, dt: number) => void;
   setDamageFlash: (v: number) => void;
   setLowHealth: (v: number) => void;
 }
@@ -99,11 +101,13 @@ export function createRenderPipeline(
   const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.55, 0.6, 0.82);
   composer.addPass(bloomPass);
 
-  const gradePass = new ShaderPass(GradeShader);
-  composer.addPass(gradePass);
-
+  // SMAA needs to see clean scene edges, so it runs before the grade pass adds
+  // grain/chromatic aberration that would otherwise confuse its edge detector.
   const smaaPass = new SMAAPass();
   composer.addPass(smaaPass);
+
+  const gradePass = new ShaderPass(GradeShader);
+  composer.addPass(gradePass);
 
   const outputPass = new OutputPass();
   composer.addPass(outputPass);
@@ -119,9 +123,9 @@ export function createRenderPipeline(
       composer.setSize(w, h);
       ssaoPass.setSize(w, h);
     },
-    update(t) {
+    update(t, dt) {
       gradePass.uniforms.time.value = t;
-      damageFlash = Math.max(0, damageFlash - 0.06);
+      damageFlash = Math.max(0, damageFlash - dt * 2.2);
       gradePass.uniforms.damageFlash.value = damageFlash;
       gradePass.uniforms.lowHealthPulse.value = lowHealth;
     },
