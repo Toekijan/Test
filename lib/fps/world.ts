@@ -66,7 +66,7 @@ export function buildWorld(physicsWorld: CANNON.World): World {
 
   const concrete = makeConcreteMaps(10);
   const metal = makeMetalPanelMaps(5);
-  const hazard = makeHazardTrimMaps(8);
+  const hazard = makeHazardTrimMaps(3);
   const crateMaps = makeCrateMaps(1);
 
   const floorMat = pbrMaterial(concrete, { roughness: 0.95, metalness: 0.05, color: 0xffffff });
@@ -184,7 +184,7 @@ export function buildWorld(physicsWorld: CANNON.World): World {
   group.add(sky);
 
   // Lighting: warm key "sunset" light through openings + cool fill + practical industrial lamps
-  const sun = new THREE.DirectionalLight(0xffb066, 9);
+  const sun = new THREE.DirectionalLight(0xffb066, 6.5);
   sun.position.set(-18, 22, -10);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
@@ -250,12 +250,14 @@ export function buildWorld(physicsWorld: CANNON.World): World {
   }
 
   world.spawnPoints.push(new THREE.Vector3(0, 1.7, 14));
+  // Enemy group origin is ground level (leg meshes are built relative to y=0),
+  // so spawn points must sit at y=0, not at some mid-body height.
   world.enemySpawns.push(
-    new THREE.Vector3(-10, 1, -10),
-    new THREE.Vector3(10, 1, -10),
-    new THREE.Vector3(-10, 1, 10),
-    new THREE.Vector3(10, 1, 10),
-    new THREE.Vector3(0, 1.8, 0)
+    new THREE.Vector3(-10, 0, -10),
+    new THREE.Vector3(10, 0, -10),
+    new THREE.Vector3(-10, 0, 10),
+    new THREE.Vector3(10, 0, 10),
+    new THREE.Vector3(0, 0.7, 0)
   );
 
   world.animate = (t) => {

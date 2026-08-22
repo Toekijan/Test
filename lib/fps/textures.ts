@@ -85,7 +85,7 @@ export interface PbrMapSet {
 function finalize(tex: THREE.CanvasTexture, repeat: number) {
   tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
   tex.repeat.set(repeat, repeat);
-  tex.anisotropy = 8;
+  tex.anisotropy = 16;
   tex.needsUpdate = true;
   return tex;
 }
@@ -330,9 +330,9 @@ export function makeCrateMaps(repeat = 1): PbrMapSet {
     for (let x = 0; x < size; x++) {
       const grain = Math.sin(x * 0.25 + fbm(noise, x / 20, y / 100, 3) * 4) * 0.5 + 0.5;
       const n = fbm(noise, x / 60, y / 60, 3);
-      const v = 90 + grain * 40 + n * 30;
+      const v = 95 + grain * 28 + n * 22;
       height[y * size + x] = grain * 0.5 + n * 0.3;
-      ctx.fillStyle = `rgb(${v + 30},${v * 0.75 + 10},${v * 0.45})`;
+      ctx.fillStyle = `rgb(${v + 14},${v * 0.86 + 12},${v * 0.66 + 8})`;
       ctx.fillRect(x, y, 1, 1);
     }
   }

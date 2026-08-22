@@ -6,6 +6,30 @@ import { SSAOPass } from "three/examples/jsm/postprocessing/SSAOPass.js";
 import { SMAAPass } from "three/examples/jsm/postprocessing/SMAAPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { Pass } from "three/examples/jsm/postprocessing/Pass.js";
+
+/**
+ * Composites the low-FOV viewmodel scene directly into the composer's buffer chain
+ * (after SSAO, before bloom/SMAA/grade) so the weapon is antialiased, bloomed and
+ * color-graded consistently with the world instead of looking pasted on top of it.
+ */
+class WeaponPass extends Pass {
+  private weaponScene: THREE.Scene;
+  private weaponCamera: THREE.PerspectiveCamera;
+
+  constructor(weaponScene: THREE.Scene, weaponCamera: THREE.PerspectiveCamera) {
+    super();
+    this.needsSwap = false;
+    this.weaponScene = weaponScene;
+    this.weaponCamera = weaponCamera;
+  }
+
+  render(renderer: THREE.WebGLRenderer, _writeBuffer: THREE.WebGLRenderTarget, readBuffer: THREE.WebGLRenderTarget) {
+    renderer.setRenderTarget(this.renderToScreen ? null : readBuffer);
+    renderer.clearDepth();
+    renderer.render(this.weaponScene, this.weaponCamera);
+  }
+}
 
 /** Final color-grade pass: vignette + filmic grain + subtle chromatic aberration + damage tint. */
 const GradeShader = {
@@ -61,7 +85,7 @@ const GradeShader = {
       float pulse = (sin(time * 6.0) * 0.5 + 0.5) * lowHealthPulse;
       color = mix(color, vec3(0.55, 0.02, 0.02), pulse * 0.3 * edge);
 
-      color = mix(color, vec3(0.65, 0.05, 0.05), damageFlash * 0.32 * mix(0.4, 1.0, edge));
+      color = mix(color, vec3(0.65, 0.05, 0.05), damageFlash * 0.3 * edge);
 
       color = pow(color, vec3(0.98));
       gl_FragColor = vec4(color, 1.0);
@@ -84,7 +108,9 @@ export function createRenderPipeline(
   scene: THREE.Scene,
   camera: THREE.PerspectiveCamera,
   width: number,
-  height: number
+  height: number,
+  weaponScene: THREE.Scene,
+  weaponCamera: THREE.PerspectiveCamera
 ): RenderPipeline {
   const composer = new EffectComposer(renderer);
   composer.setSize(width, height);
@@ -93,12 +119,18 @@ export function createRenderPipeline(
   composer.addPass(renderPass);
 
   const ssaoPass = new SSAOPass(scene, camera, width, height);
-  ssaoPass.kernelRadius = 0.6;
-  ssaoPass.minDistance = 0.0008;
-  ssaoPass.maxDistance = 0.12;
+  ssaoPass.kernelRadius = 5;
+  ssaoPass.minDistance = 0.002;
+  ssaoPass.maxDistance = 0.1;
   composer.addPass(ssaoPass);
 
-  const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.55, 0.6, 0.82);
+  // Composite the viewmodel into the buffer chain here (after AO, before bloom/AA/grade)
+  // so the weapon is bloomed and color-graded like the rest of the frame instead of
+  // looking like a flat sticker pasted on top of a fully post-processed image.
+  const weaponPass = new WeaponPass(weaponScene, weaponCamera);
+  composer.addPass(weaponPass);
+
+  const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.5, 0.75, 0.85);
   composer.addPass(bloomPass);
 
   // SMAA needs to see clean scene edges, so it runs before the grade pass adds

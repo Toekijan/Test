@@ -187,9 +187,20 @@ export default function FpsGame() {
           </h1>
           <div style={{ width: 120, height: 2, background: `linear-gradient(90deg, transparent, ${ACCENT}, transparent)`, margin: "18px 0" }} />
           <p style={{ opacity: 0.8, marginTop: 0, marginBottom: 26, fontSize: 13, letterSpacing: 2, color: "#fff" }}>
-            {started ? "SIMULATION PAUSED — CLICK TO RESUME" : "CLICK TO ENTER COMBAT"}
+            {started ? "SIMULATION PAUSED — CLICK TO RESUME" : "CLICK TO ENTER THE ARENA"}
           </p>
-          <div style={{ fontSize: 12, opacity: 0.7, lineHeight: 2, letterSpacing: 1, color: "#fff" }}>
+          <div
+            style={{
+              fontSize: 12,
+              opacity: 0.9,
+              lineHeight: 2.2,
+              letterSpacing: 1,
+              color: "#fff",
+              background: "rgba(8,6,4,0.55)",
+              border: "1px solid rgba(232,160,32,0.2)",
+              padding: "12px 20px",
+            }}
+          >
             <div>
               <kbd style={keyStyle}>WASD</kbd> Move &nbsp; <kbd style={keyStyle}>SHIFT</kbd> Sprint &nbsp; <kbd style={keyStyle}>CTRL</kbd> Crouch &nbsp;{" "}
               <kbd style={keyStyle}>SPACE</kbd> Jump
@@ -271,10 +282,13 @@ const keyStyle: React.CSSProperties = {
   fontFamily: FONT,
   fontWeight: 700,
   fontSize: 11,
-  padding: "2px 6px",
-  border: `1px solid rgba(232,160,32,0.5)`,
-  color: ACCENT_BRIGHT,
-  background: "rgba(232,160,32,0.08)",
+  padding: "3px 7px",
+  borderRadius: 3,
+  border: `1px solid rgba(255,210,120,0.6)`,
+  borderBottom: `3px solid rgba(150,95,10,0.9)`,
+  color: "#1a1206",
+  background: `linear-gradient(180deg, ${ACCENT_BRIGHT}, ${ACCENT})`,
+  boxShadow: "0 1px 0 rgba(0,0,0,0.4)",
   letterSpacing: 0.5,
 };
 

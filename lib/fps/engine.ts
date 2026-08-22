@@ -46,6 +46,7 @@ export class FpsEngine {
   private hud: HudState;
   private disposed = false;
   private killCount = 0;
+  private hasStarted = false;
 
   constructor(container: HTMLElement) {
     this.container = container;
@@ -57,7 +58,7 @@ export class FpsEngine {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 0.98;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(this.renderer.domElement);
 
@@ -126,7 +127,15 @@ export class FpsEngine {
       this.enemyManager.spawn(`enemy-${i}`, spawnPos.clone());
     }
 
-    this.pipeline = createRenderPipeline(this.renderer, this.scene, this.camera, container.clientWidth, container.clientHeight);
+    this.pipeline = createRenderPipeline(
+      this.renderer,
+      this.scene,
+      this.camera,
+      container.clientWidth,
+      container.clientHeight,
+      this.weaponScene,
+      this.weaponCamera
+    );
     this.audio = new AudioEngine();
 
     this.hud = {
@@ -202,6 +211,7 @@ export class FpsEngine {
 
   private onPointerLockChange = () => {
     this.pointerLocked = document.pointerLockElement === this.renderer.domElement;
+    if (this.pointerLocked) this.hasStarted = true;
   };
 
   private handleResize = () => {
@@ -332,14 +342,15 @@ export class FpsEngine {
         this.weapon.tryFire(muzzleWorld, dir, this.combinedRaycast);
       }
 
-      this.enemyManager.update(dt, this.player.position, this.hasLineOfSight);
+      // Hostiles stay inert until the player has actually entered the arena at least
+      // once, so idling on the main menu never results in taking damage/flash-tinting.
+      if (this.hasStarted) {
+        this.enemyManager.update(dt, this.player.position, this.hasLineOfSight);
+      }
       this.world.animate(t, dt);
       this.pipeline.update(t, dt);
 
       this.pipeline.composer.render();
-      this.renderer.setRenderTarget(null);
-      this.renderer.clearDepth();
-      this.renderer.render(this.weaponScene, this.weaponCamera);
     };
     loop();
   }

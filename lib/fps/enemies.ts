@@ -54,7 +54,7 @@ export class Enemy {
     const armor = makeSoldierMaterial(0x24291f, 0x1a0000);
     const skin = makeSoldierMaterial(0xb08765);
     const helmet = makeSoldierMaterial(0x1e2118);
-    const visorMat = new THREE.MeshStandardMaterial({ color: 0x0a0c0e, emissive: 0xff2200, emissiveIntensity: 0.9, roughness: 0.3, metalness: 0.4 });
+    const visorMat = new THREE.MeshStandardMaterial({ color: 0xff2200, emissive: 0xff2200, emissiveIntensity: 2.4, roughness: 0.3, metalness: 0.4, toneMapped: true });
     const padMat = makeSoldierMaterial(0x1a1d16, 0x0a0500);
     const bootMat = makeSoldierMaterial(0x15130f);
 
@@ -89,8 +89,8 @@ export class Enemy {
     const limbDefs: [string, number, number, number, number, number, number, THREE.Material][] = [
       ["armL", 0.34, 1.15, 0, 0.13, 0.48, 0.13, uniform],
       ["armR", -0.34, 1.15, 0, 0.13, 0.48, 0.13, uniform],
-      ["legL", 0.14, 0.55, 0, 0.16, 0.58, 0.18, armor],
-      ["legR", -0.14, 0.55, 0, 0.16, 0.58, 0.18, armor],
+      ["legL", 0.14, 0.39, 0, 0.16, 0.78, 0.18, armor],
+      ["legR", -0.14, 0.39, 0, 0.16, 0.78, 0.18, armor],
     ];
     for (const [name, x, y, z, w, h, d, mat] of limbDefs) {
       const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
