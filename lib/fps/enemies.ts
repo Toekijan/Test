@@ -18,6 +18,17 @@ function getBlobShadowMat() {
   return sharedBlobShadowMat;
 }
 
+/** THREE.MathUtils.damp on a raw angle spins the long way round across the ±π
+ * seam; wrap the delta to the shortest direction before applying the same
+ * exponential-decay damping. */
+function dampAngle(current: number, target: number, lambda: number, dt: number): number {
+  const twoPi = Math.PI * 2;
+  let delta = (target - current) % twoPi;
+  if (delta > Math.PI) delta -= twoPi;
+  else if (delta < -Math.PI) delta += twoPi;
+  return current + delta * (1 - Math.exp(-lambda * dt));
+}
+
 type AIState = "patrol" | "chase" | "attack" | "dead";
 
 interface LimbPart {
@@ -50,6 +61,7 @@ export class Enemy {
   private healthBarVisibleTimer = 0;
   private ragdollActive = false;
   private muzzleFlashMesh: THREE.Mesh;
+  private blobShadow!: THREE.Mesh;
   private muzzleFlashTimer = 0;
   private bodyMat: CANNON.Material;
 
@@ -150,10 +162,10 @@ export class Enemy {
 
     // Cheap fake contact shadow: guarantees the soldier reads as grounded even
     // where the real-time shadow map / SSAO don't resolve a hard contact shadow.
-    const blob = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), getBlobShadowMat());
-    blob.rotation.x = -Math.PI / 2;
-    blob.position.set(0, 0.02, 0);
-    this.group.add(blob);
+    this.blobShadow = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), getBlobShadowMat());
+    this.blobShadow.rotation.x = -Math.PI / 2;
+    this.blobShadow.position.set(0, 0.02, 0);
+    this.group.add(this.blobShadow);
 
     this.pickNewPatrolTarget();
   }
@@ -180,6 +192,7 @@ export class Enemy {
   private die(impulseDir: THREE.Vector3) {
     this.state = "dead";
     this.healthBarGroup.visible = false;
+    this.blobShadow.visible = false;
     this.activateRagdoll(impulseDir);
     this.onDeath?.(this);
   }
@@ -316,7 +329,7 @@ export class Enemy {
       // Local -Z is "front" (matches the visor/muzzle placement and the engine-wide
       // -Z-forward convention used by the player camera), so aim -Z at the target.
       const targetAngle = Math.atan2(-dir.x, -dir.z);
-      this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, targetAngle, 8, dt);
+      this.group.rotation.y = dampAngle(this.group.rotation.y, targetAngle, 8, dt);
     }
   }
 
@@ -326,7 +339,7 @@ export class Enemy {
     // Same -Z-forward convention as moveToward — this runs during "attack", so
     // getting this sign wrong means the enemy shoots with its back turned.
     const targetAngle = Math.atan2(-dir.x, -dir.z);
-    this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, targetAngle, 10, dt);
+    this.group.rotation.y = dampAngle(this.group.rotation.y, targetAngle, 10, dt);
   }
 
   private fireAtPlayer(from: THREE.Vector3, to: THREE.Vector3) {
