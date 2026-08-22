@@ -397,14 +397,20 @@ export function makeSkyGradientTexture(): THREE.CanvasTexture {
  * the real-time shadow map or SSAO don't resolve a hard contact shadow.
  */
 export function makeBlobShadowTexture(): THREE.CanvasTexture {
+  // Opaque grayscale (not alpha-based) so it composites via THREE.MultiplyBlending:
+  // white edges leave the floor untouched, the dark center darkens it. Sidesteps
+  // canvas-alpha/premultiply edge cases that made an alpha-transparent version a
+  // silent no-op in testing.
   const size = 128;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, size, size);
   const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-  grad.addColorStop(0, "rgba(0,0,0,0.55)");
-  grad.addColorStop(0.6, "rgba(0,0,0,0.32)");
-  grad.addColorStop(1, "rgba(0,0,0,0)");
+  grad.addColorStop(0, "#3a3a3a");
+  grad.addColorStop(0.55, "#7a7a7a");
+  grad.addColorStop(1, "#ffffff");
   ctx.fillStyle = grad;
   ctx.fillRect(0, 0, size, size);
   const tex = new THREE.CanvasTexture(canvas);

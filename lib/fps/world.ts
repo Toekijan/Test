@@ -196,7 +196,15 @@ export function buildWorld(physicsWorld: CANNON.World): World {
     [-4, 0.6, 12, 0.15],
   ];
   const blobShadowTex = makeBlobShadowTexture();
-  const blobShadowMat = new THREE.MeshBasicMaterial({ map: blobShadowTex, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 });
+  const blobShadowMat = new THREE.MeshBasicMaterial({
+    map: blobShadowTex,
+    transparent: true,
+    premultipliedAlpha: true,
+    blending: THREE.MultiplyBlending,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+  });
   const addBlobShadow = (x: number, z: number, radius: number, parent: THREE.Object3D, localY: number) => {
     const blob = new THREE.Mesh(new THREE.PlaneGeometry(radius * 2, radius * 2), blobShadowMat);
     blob.rotation.x = -Math.PI / 2;

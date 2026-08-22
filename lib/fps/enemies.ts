@@ -8,6 +8,8 @@ function getBlobShadowMat() {
     sharedBlobShadowMat = new THREE.MeshBasicMaterial({
       map: makeBlobShadowTexture(),
       transparent: true,
+      premultipliedAlpha: true,
+      blending: THREE.MultiplyBlending,
       depthWrite: false,
       polygonOffset: true,
       polygonOffsetFactor: -2,
@@ -321,7 +323,9 @@ export class Enemy {
   private facePlayer(playerPos: THREE.Vector3, dt: number) {
     const dir = playerPos.clone().sub(this.group.position);
     dir.y = 0;
-    const targetAngle = Math.atan2(dir.x, dir.z);
+    // Same -Z-forward convention as moveToward — this runs during "attack", so
+    // getting this sign wrong means the enemy shoots with its back turned.
+    const targetAngle = Math.atan2(-dir.x, -dir.z);
     this.group.rotation.y = THREE.MathUtils.damp(this.group.rotation.y, targetAngle, 10, dt);
   }
 
